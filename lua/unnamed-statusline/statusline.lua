@@ -7,8 +7,8 @@
 --- @field public name string The name of the component; trying not to take dependencies on this other than logging.
 --- @field public callback function(event: any): string The callback to be executed when updating the statusline component.
 --- @field public highlight string Name of highlight to apply to rendered component.
---- @field public event ( string | string[] | nil ) Name of the event to be triggered on.
---- @field public user_event ( string | string[] | nil ) Name of any user events to trigger on.
+--- @field public event string[] | nil Name of the event to be triggered on.
+--- @field public user_event string[] | nil Name of any user events to trigger on.
 --- @field public position ComponentPosition Positioning for the rendered component.
 --- @field public eval boolean Whether or not to evaluate the string as a statusline string. Useful when using native string replacements.
 
@@ -22,7 +22,7 @@
 --- @field user_event string[] Override user_event to always be a table.
 --- @field private last_value string The last value that a render callback produced. Do not set.
 local StatusLineComponent = {
-    event = { "VimEnter" },
+    event = { "VimEnter" }, -- Needed to render the statusline as soon as vim opens.
     last_value = '',
 }
 
@@ -30,12 +30,12 @@ local StatusLineComponent = {
 --- @param component StatusLineComponentConfiguration
 --- @return StatusLineComponent
 function StatusLineComponent:new(component)
-    if type(component.event) == "string" then
-        component.event = { component.event }
+    if component.event ~= nil then
+        vim.list_extend(component.event, self.event)
     end
 
-    if type(component.user_event) == "string" then
-        component.user_event = { component.user_event }
+    if component.user_event ~= nil then
+        vim.list_extend(component.user_event, self.user_event)
     end
 
     return vim.tbl_deep_extend("force", self, component)

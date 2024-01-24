@@ -4,6 +4,7 @@ local async = require('plenary.async')
 local StatusLineComponent = require('unnamed-statusline.statusline')
 
 M.on_events = {}
+
 --- @type StatusLineComponent[]
 M.registered_components = {}
 
@@ -87,7 +88,7 @@ M.setup = function(conf)
         register_statusline_component(component)
     end
 
-    local autocmd_group = vim.api.nvim_create_augroup('statusline_pendingname', {})
+    local autocmd_group = vim.api.nvim_create_augroup('unnamed-statusline', { clear = true })
     for event_type, val in pairs(M.on_events) do
         print('registering autocmd', event_type)
 
@@ -99,7 +100,6 @@ M.setup = function(conf)
         }
 
         if event_type == "User" and val ~= nil then
-            print(vim.inspect(val))
             settings.pattern = val
         end
 
