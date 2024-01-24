@@ -1,7 +1,7 @@
 local M = {}
 
 local async = require('plenary.async')
-local StatusLineComponent = require('unnamed-statusline.statusline')
+local StatusLineComponent = require('linedancing.statusline')
 
 M.on_events = {}
 
@@ -78,20 +78,15 @@ M.update_statusline = function(event)
     vim.opt_local.statusline = left_side .. left_padding .. center .. right_padding .. right_side
 end
 
-M.update_statusline_async = function(event)
-end
-
---- Setup function to configure unnamed-statusline
+--- Setup function to configure linedancing
 --- @param conf StatusLineConfiguration Array of statusline components to register
 M.setup = function(conf)
     for _, component in pairs(conf.components) do
         register_statusline_component(component)
     end
 
-    local autocmd_group = vim.api.nvim_create_augroup('unnamed-statusline', { clear = true })
+    local autocmd_group = vim.api.nvim_create_augroup('linedancing-autocmd', { clear = true })
     for event_type, val in pairs(M.on_events) do
-        print('registering autocmd', event_type)
-
         local settings = {
             group = autocmd_group,
             callback = function(event)
