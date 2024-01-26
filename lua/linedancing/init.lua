@@ -38,6 +38,32 @@ local register_statusline_component = function(statusline_component)
     statusline_component.callback = async.wrap(statusline_component.callback, 1)
 end
 
+M.update_components = vim.schedule_wrap(function(event)
+    local bufnr = event.buf
+    local win_id = vim.fn.bufwinid(bufnr)
+
+    if win_id == nil or win_id == -1 then
+        return
+    end
+
+    local win_config = vim.api.nvim_win_get_config(win_id)
+    if not win_config.relative == "" then
+        return
+    end
+
+    local component_updated = false
+    for _, component in pairs(M.registered_components) do
+        local did_update = component:update(event)
+        if did_update then
+            component_updated = true
+        end
+    end
+
+    if component_updated then
+        M.update_statusline(event)
+    end
+end)
+
 M.update_statusline = function(event)
     local bufnr = event.buf
     local win_id = vim.fn.bufwinid(bufnr)
@@ -47,7 +73,6 @@ M.update_statusline = function(event)
     end
 
     local win_config = vim.api.nvim_win_get_config(win_id)
-
     if not win_config.relative == "" then
         return
     end
@@ -67,9 +92,9 @@ M.update_statusline = function(event)
     }
 
     for _, component in pairs(M.registered_components) do
-        local result, result_width = component:render(event)
-        table.insert(rendered_components[component.position], component:apply_highlight(result))
-        rendered_components_width[component.position] = rendered_components_width[component.position] + result_width
+        table.insert(rendered_components[component.position], component:apply_highlight())
+        rendered_components_width[component.position] = rendered_components_width[component.position] +
+            component.last_width
     end
 
     local left_side = table.concat(rendered_components["left"])
@@ -90,7 +115,12 @@ M.update_statusline = function(event)
     local right_padding = string.rep(' ', right_side_padding)
 
     -- KA-CHOW!
-    vim.opt_local.statusline = left_side .. left_padding .. center .. right_padding .. right_side
+    M.current_statusline = left_side .. left_padding .. center .. right_padding .. right_side
+    vim.api.nvim_exec_autocmds("User", { pattern = "StatusLineComponentUpdated" })
+end
+
+M.show_statusline = function()
+    vim.opt_local.statusline = M.current_statusline
 end
 
 --- Setup function to configure linedancing
@@ -115,7 +145,9 @@ M.setup = function(conf)
                     return
                 end
 
-                M.update_statusline(event)
+                async.void(function(ev)
+                    M.update_components(ev)
+                end)(event)
             end,
         }
 
@@ -126,6 +158,14 @@ M.setup = function(conf)
 
         vim.api.nvim_create_autocmd(event_type, settings)
     end
+
+    vim.api.nvim_create_autocmd("User", {
+        pattern = "StatusLineComponentUpdated",
+        group = autocmd_group,
+        callback = function()
+            M.show_statusline()
+        end,
+    })
 end
 
 return M

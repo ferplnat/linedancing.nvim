@@ -17,13 +17,14 @@
 
 --- @class StatusLineComponent: StatusLineComponentConfiguration
 --- @field public new function(component: StatusLineComponent): StatusLineComponent Component constructor
---- @field public render function(self: self, event: any, buf: int?): StatusLineComponent The last value that a render callback produced. Do not set.
+--- @field public update function(self: self, event: any, buf: int?): StatusLineComponent The last value that a render callback produced. Do not set.
 --- @field event string[] Override event to always be a table.
 --- @field user_event string[] Override user_event to always be a table.
 --- @field private last_value string The last value that a render callback produced. Do not set.
 local StatusLineComponent = {
     event = { "VimEnter" }, -- Needed to render the statusline as soon as vim opens.
     last_value = '',
+    last_width = 0,
 }
 
 --- Create StatusLineComponent object from configuration
@@ -34,26 +35,21 @@ function StatusLineComponent:new(component)
         vim.list_extend(component.event, self.event)
     end
 
-    if component.user_event ~= nil then
-        vim.list_extend(component.user_event, self.user_event)
-    end
-
     return vim.tbl_deep_extend("force", self, component)
 end
 
---- Render the statusline component into string.
+--- Update the statusline component into string.
 --- @param event any
---- @return string StatusLineComponentString String representing the statusline component
---- @return integer StatusLineComponentWidth Integer representing the width of the component after any expression evaluations.
-function StatusLineComponent:render(event)
+--- @return boolean StatusLineComponentUpdated Whether or not the component actually updated.
+function StatusLineComponent:update(event)
     local bufnr = event.buf
     local win_id = vim.fn.bufwinid(bufnr)
-    local eval_string
     local compare_event = self.event
     local incoming_event = event.event
+    local component_updated = vim.list_contains({ "WinResized", "VimResized" }, event.event)
 
     if not win_id then
-        return '', 0
+        return component_updated
     end
 
     if event.event == "User" and self.user_event then
@@ -62,21 +58,26 @@ function StatusLineComponent:render(event)
     end
 
     if vim.tbl_contains(compare_event, incoming_event) then
-        self.last_value = self.callback(event) or ''
-        eval_string = vim.api.nvim_eval_statusline(self.last_value, { winid = win_id })
+        local new_value = self.callback(event) or ''
 
         if self.eval then
-            self.last_value = eval_string.str
+            new_value = vim.api.nvim_eval_statusline(new_value, { winid = win_id }).str
+        end
+
+        if self.last_value ~= new_value then
+            self.last_value = new_value
+            component_updated = true
         end
     end
 
-    if eval_string == nil then
-        eval_string = {
-            width = vim.api.nvim_eval_statusline(self.last_value, { winid = win_id }).width
-        }
+    local new_width = vim.api.nvim_eval_statusline(self.last_value, { winid = win_id }).width
+
+    if self.last_width ~= new_width then
+        self.last_width = new_width
+        component_updated = true
     end
 
-    return self.last_value, eval_string.width
+    return component_updated
 end
 
 --- Return string wrapped in highlight expression
