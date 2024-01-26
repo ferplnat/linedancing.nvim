@@ -72,7 +72,7 @@ function StatusLineComponent:render(event)
 
     if eval_string == nil then
         eval_string = {
-            width = string.len(self.last_value),
+            width = vim.api.nvim_eval_statusline(self.last_value, { winid = win_id }).width
         }
     end
 

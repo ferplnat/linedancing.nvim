@@ -3,7 +3,12 @@ local M = {}
 local async = require('plenary.async')
 local StatusLineComponent = require('linedancing.statusline')
 
-M.on_events = {}
+M.on_events = {
+    -- We want to trigger a re-draw whether or not any components subscribe to these events
+    -- TODO: Refactor to separate draw and recalculate
+    ["WinResized"] = true,
+    ["VimResized"] = true,
+}
 
 --- @type StatusLineComponent[]
 M.registered_components = {}
@@ -30,13 +35,23 @@ local register_statusline_component = function(statusline_component)
         M.on_events["User"] = vim.tbl_extend("error", M.on_events["User"], statusline_component.user_event)
     end
 
-    -- REMOVE
     statusline_component.callback = async.wrap(statusline_component.callback, 1)
 end
 
 M.update_statusline = function(event)
     local bufnr = event.buf
     local win_id = vim.fn.bufwinid(bufnr)
+
+    if win_id == nil or win_id == -1 then
+        return
+    end
+
+    local win_config = vim.api.nvim_win_get_config(win_id)
+
+    if not win_config.relative == "" then
+        return
+    end
+
     local status_width = vim.api.nvim_eval_statusline('%=%=', { winid = win_id }).width
 
     local rendered_components = {
@@ -90,10 +105,21 @@ M.setup = function(conf)
         local settings = {
             group = autocmd_group,
             callback = function(event)
+                local win_id = vim.fn.bufwinid(event.buf)
+                if win_id == nil or win_id == -1 then return end
+
+                local win_config = vim.api.nvim_win_get_config(win_id)
+
+                -- Fix weirdness with things like notify or noice
+                if win_config.relative ~= "" then
+                    return
+                end
+
                 M.update_statusline(event)
             end,
         }
 
+        -- User events are always under "User" ':h events'
         if event_type == "User" and val ~= nil then
             settings.pattern = val
         end
