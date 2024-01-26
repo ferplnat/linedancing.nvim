@@ -34,10 +34,6 @@ function StatusLineComponent:new(component)
         vim.list_extend(component.event, self.event)
     end
 
-    if component.user_event ~= nil then
-        vim.list_extend(component.user_event, self.user_event)
-    end
-
     return vim.tbl_deep_extend("force", self, component)
 end
 
