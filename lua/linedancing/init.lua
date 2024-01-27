@@ -1,11 +1,9 @@
 local M = {}
 
-local async = require('plenary.async')
 local StatusLineComponent = require('linedancing.statusline')
+local async = require('plenary.async')
 
 M.on_events = {
-    -- We want to trigger a re-draw whether or not any components subscribe to these events
-    -- TODO: Refactor to separate draw and recalculate
     ["WinResized"] = true,
     ["VimResized"] = true,
 }
@@ -15,7 +13,8 @@ M.registered_components = {}
 
 --- Registers a given statusline component for event processing to work
 --- @param statusline_component StatusLineComponentConfiguration
-local register_statusline_component = function(statusline_component)
+--- @return nil
+M.register_statusline_component = function(statusline_component)
     --- @type StatusLineComponent
     statusline_component = StatusLineComponent:new(statusline_component)
     table.insert(M.registered_components, statusline_component)
@@ -38,6 +37,37 @@ local register_statusline_component = function(statusline_component)
     statusline_component.callback = async.wrap(statusline_component.callback, 1)
 end
 
+--- Updates computed values for registered components.
+--- @param event any Autocmd event.
+--- @return nil
+M.update_components = function(event)
+    local bufnr = event.buf
+    local win_id = vim.fn.bufwinid(bufnr)
+
+    if win_id == nil or win_id == -1 then
+        return
+    end
+
+    local win_config = vim.api.nvim_win_get_config(win_id)
+    if not win_config.relative == "" then
+        return
+    end
+
+    local component_updated = false
+    for _, component in pairs(M.registered_components) do
+        if component:update(event) then
+            component_updated = true
+        end
+    end
+
+    if component_updated then
+        M.update_statusline(event)
+    end
+end
+
+--- Update dimensions, padding, truncation for the statusline string. Does not update components.
+--- @param event any Autocmd event
+--- @return nil
 M.update_statusline = function(event)
     local bufnr = event.buf
     local win_id = vim.fn.bufwinid(bufnr)
@@ -47,7 +77,6 @@ M.update_statusline = function(event)
     end
 
     local win_config = vim.api.nvim_win_get_config(win_id)
-
     if not win_config.relative == "" then
         return
     end
@@ -67,9 +96,9 @@ M.update_statusline = function(event)
     }
 
     for _, component in pairs(M.registered_components) do
-        local result, result_width = component:render(event)
-        table.insert(rendered_components[component.position], component:apply_highlight(result))
-        rendered_components_width[component.position] = rendered_components_width[component.position] + result_width
+        table.insert(rendered_components[component.position], component:apply_highlight())
+        rendered_components_width[component.position] = rendered_components_width[component.position] +
+            component.last_width
     end
 
     local left_side = table.concat(rendered_components["left"])
@@ -90,14 +119,28 @@ M.update_statusline = function(event)
     local right_padding = string.rep(' ', right_side_padding)
 
     -- KA-CHOW!
-    vim.opt_local.statusline = left_side .. left_padding .. center .. right_padding .. right_side
+    M.current_statusline = left_side .. left_padding .. center .. right_padding .. right_side
+    vim.api.nvim_exec_autocmds("User", { pattern = "StatusLineComponentUpdated" })
+end
+
+--- Update window statusline with the last computed value.
+--- @param event any Autocmd event
+--- @return nil
+M.show_statusline = function(event)
+    local bufnr = event.buf
+    local win_id = vim.fn.bufwinid(bufnr)
+
+    if win_id == nil or win_id == -1 then
+        return
+    end
+    vim.wo[win_id].statusline = M.current_statusline
 end
 
 --- Setup function to configure linedancing
---- @param conf StatusLineConfiguration Array of statusline components to register
+--- @param conf StatusLineConfiguration Configuration table, see: linedancing-configuration.
 M.setup = function(conf)
     for _, component in pairs(conf.components) do
-        register_statusline_component(component)
+        M.register_statusline_component(component)
     end
 
     local autocmd_group = vim.api.nvim_create_augroup('linedancing-autocmd', { clear = true })
@@ -115,7 +158,9 @@ M.setup = function(conf)
                     return
                 end
 
-                M.update_statusline(event)
+                async.void(function(ev)
+                    M.update_components(ev)
+                end)(event)
             end,
         }
 
@@ -126,6 +171,14 @@ M.setup = function(conf)
 
         vim.api.nvim_create_autocmd(event_type, settings)
     end
+
+    vim.api.nvim_create_autocmd("User", {
+        pattern = "StatusLineComponentUpdated",
+        group = autocmd_group,
+        callback = function(event)
+            M.show_statusline(event)
+        end,
+    })
 end
 
 return M
